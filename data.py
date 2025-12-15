@@ -46,7 +46,7 @@ def compute_normalized_returns(df: pd.DataFrame, roll_window: int = 60) -> pd.Da
     data["rolling_mean"] = rolling.mean()
     data["rolling_std"] = rolling.std(ddof=0)
     data["norm_return"] = (data["log_return"] - data["rolling_mean"]) / data["rolling_std"]
-    data = data.dropna(subset=["norm_return"]).reset_index()
+    data = data.dropna(subset=[("norm_return", "")]).reset_index()
     return data
 
 
