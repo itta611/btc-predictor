@@ -15,7 +15,6 @@ from predictor import predict_class, load_checkpoint
 
 def evaluate_on_test_data():
     """テストデータで詳細な評価"""
-    print("🔍 テストデータでの評価開始...")
 
     # モデル読み込み
     model, scaler, config = load_checkpoint()
@@ -134,7 +133,7 @@ def quick_prediction():
 # ===== 簡易バックテスト =====
 def simple_backtest(model, scaler, config):
     # テスト用データ生成
-    df = get_btc_data(period="1mo", interval="1h")
+    df = get_btc_data(period="2y", interval="1h")
     df_with_features = create_features(df)
 
     # 特徴量を取得
@@ -145,7 +144,6 @@ def simple_backtest(model, scaler, config):
     test_start = len(features) - 500
     L = config['sequence_length']
     H = config['horizon']
-    thr = 0.9
 
     trades = []
     prices = df_with_features['Close'].values
@@ -163,12 +161,10 @@ def simple_backtest(model, scaler, config):
         actual_return = (future_price - current_price) / current_price
 
         # 実際のクラス
-        if actual_return >= thr:
+        if actual_return > 0:
             actual_class = "up"
-        elif actual_return <= -thr:
-            actual_class = "down"
         else:
-            actual_class = "flat"
+            actual_class = "down"
 
         # トレード判定
         conf = result["confidence"]
@@ -176,21 +172,22 @@ def simple_backtest(model, scaler, config):
         p_down = result["probabilities"]["p_down"]
         edge = p_up - p_down
 
-        if result["class"] == 'flat' or conf < 0.4:
-            continue
+        predicted_class = "flat"
+        if conf >= 0.55 and edge >= 0.10:
+            predicted_class = "up"
+        elif conf >= 0.55 and edge <= -0.10:
+            predicted_class = "down"
 
-        correct = False
-        if future_price > current_price and result["class"] == "up":
-            correct = True
-        elif future_price < current_price and result["class"] == "down":
-            correct = True
+        # 予測がflatなら取引なしなので、無視
+        if predicted_class == "flat":
+            continue
 
         trades.append({
             'predicted_class': result["class"],
             'actual_class': actual_class,
             'confidence': conf,
             'actual_return': actual_return,
-            'correct': correct
+            'correct': predicted_class == actual_class
         })
 
     # 成績集計
@@ -227,7 +224,7 @@ def main():
         print(f"❌ エラー: {e}")
         print("\n💡 解決方法: modeling/btc_train.py を先に実行してください")
     except Exception as e:
-        print(f"❌ 予期しないエラー: {e}")
+        print(e)
 
 if __name__ == "__main__":
     main()
