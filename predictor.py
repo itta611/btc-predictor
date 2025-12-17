@@ -13,7 +13,6 @@ MODEL_PATH = CHECKPOINT_DIR / "model.pt"
 SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
 CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
 
-# ===== チェックポイント読み込み =====
 def load_checkpoint():
     print("📂 チェックポイント読み込み中...")
 
@@ -48,8 +47,6 @@ def load_checkpoint():
     model.to(device)
     model.eval()  # 推論モードに設定
 
-    print(f"✅ チェックポイント読み込み完了:")
-    print(f"   モデル: {config['input_dim']}特徴量 → 3クラス")
     print(f"   使用デバイス: {device}")
 
     return model, scaler, config
@@ -116,11 +113,6 @@ def predict_class(model, scaler, features_sequence):
 
 # ===== サンプル推論 =====
 def run_sample_prediction(model, scaler, config):
-    """
-    サンプルデータでの推論例を実行
-    """
-    print("🔮 サンプル推論実行中...")
-
     # サンプルデータ生成
     df = get_btc_data(period="7d", interval="1h")
     df_with_features = create_features(df)
@@ -149,43 +141,24 @@ def run_sample_prediction(model, scaler, config):
     edge = result['probabilities']['p_up'] - result['probabilities']['p_down']
 
     if conf >= 0.55 and edge >= 0.10:
-        recommendation = "🟢 LONG推奨"
+        print("🟢 LONG推奨")
     elif conf >= 0.55 and edge <= -0.10:
-        recommendation = "🔴 SHORT推奨"
+        print("🔴 SHORT推奨")
     else:
-        recommendation = "⚪ HOLD推奨（確信度不足）"
+        print("⚪ HOLD推奨（確信度不足）")
 
-    print(f"   取引推奨: {recommendation}")
-
-# ===== メイン関数 =====
 def main():
-    parser = argparse.ArgumentParser(description='ビットコイン分類モデル推論')
-    parser.add_argument('--mode', choices=['predict'],
-                       default='predict', help='実行モード')
-    args = parser.parse_args()
-
-    print("🔮 ビットコイン価格分類モデル推論開始!")
-    print("=" * 60)
-
     try:
         # チェックポイント読み込み
         model, scaler, config = load_checkpoint()
 
-        if args.mode == 'predict':
-            # サンプル推論
-            run_sample_prediction(model, scaler, config)
-
-        print("\n" + "=" * 60)
-        print("✅ 推論完了!")
+        run_sample_prediction(model, scaler, config)
 
     except FileNotFoundError as e:
-        print(f"❌ エラー: {e}")
-        print("\n💡 解決方法:")
-        print("   1. まず btc_train.py を実行してモデルを学習してください")
-        print("   2. 学習完了後、再度このスクリプトを実行してください")
+        print("モデルファイルが見つかりませんでした。")
 
     except Exception as e:
-        print(f"❌ 予期しないエラー: {e}")
+        print(e)
 
 if __name__ == "__main__":
     main()

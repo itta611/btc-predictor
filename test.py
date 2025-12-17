@@ -11,23 +11,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.btc_data import get_btc_data, create_features, prepare_data, BtcSequenceDataset
-from modeling.btc_model import BtcClassifier
 from predictor import predict_class, load_checkpoint
-
-def get_device():
-    """デバイスを取得"""
-    if torch.cuda.is_available():
-        return torch.device('cuda')
-    elif torch.backends.mps.is_available():
-        return torch.device('mps')
-    else:
-        return torch.device('cpu')
-
-# ===== 設定 =====
-CHECKPOINT_DIR = Path("checkpoints/btc_classifier")
-MODEL_PATH = CHECKPOINT_DIR / "model.pt"
-SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
-CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
 
 def evaluate_on_test_data():
     """テストデータで詳細な評価"""
@@ -109,103 +93,6 @@ def evaluate_on_test_data():
                   f"[{count}件, カバレッジ{coverage:.1%}]")
 
     return all_predictions, all_targets, all_probabilities
-
-def backtest_simulation():
-    """取引シミュレーション（バックテスト）"""
-    print("\n💰 取引シミュレーション開始...")
-
-    model, scaler, config = load_checkpoint()
-
-    # バックテスト用データ（最新1ヶ月）
-    df = get_btc_data(period="1mo", interval="1h")
-    df_with_features = create_features(df)
-
-    feature_cols = config['feature_columns']
-    features = df_with_features[feature_cols].values
-    prices = df_with_features['Close'].values
-
-    L = config['sequence_length']
-    H = config['horizon']
-    thr = config['threshold']
-
-    # 取引シミュレーション
-    trades = []
-    portfolio_value = 100000  # 初期資本10万円
-    fee_rate = 0.0004  # 取引手数料0.04%
-
-    for i in range(L, len(features) - H):
-        # 特徴量系列
-        features_seq = features[i-L:i]
-
-        # 正規化
-        features_scaled = scaler.transform(features_seq.reshape(-1, features_seq.shape[-1]))
-        features_scaled = features_scaled.reshape(features_seq.shape)
-
-        # 予測
-        device = next(model.parameters()).device
-        X = torch.FloatTensor(features_scaled).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            logits = model(X)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-
-        # 実際の将来リターン
-        current_price = prices[i]
-        future_price = prices[i + H]
-        actual_return = (future_price - current_price) / current_price
-
-        # 取引判定
-        p_up, p_down, p_flat = probs[0], probs[1], probs[2]
-        max_prob = max(probs)
-        predicted_class = np.argmax(probs)
-
-        action = 'hold'
-        position_size = 0
-
-        # 取引ルール
-        if max_prob >= 0.6:  # 高信頼度の場合のみ取引
-            edge = p_up - p_down
-            if edge >= 0.2:  # 強い上昇予測
-                action = 'long'
-                position_size = 0.1  # 資金の10%
-            elif edge <= -0.2:  # 強い下降予測
-                action = 'short'
-                position_size = 0.1
-
-        # 損益計算
-        pnl = 0
-        if action == 'long':
-            pnl = position_size * actual_return * portfolio_value - fee_rate * position_size * portfolio_value
-        elif action == 'short':
-            pnl = position_size * (-actual_return) * portfolio_value - fee_rate * position_size * portfolio_value
-
-        portfolio_value += pnl
-
-        trades.append({
-            'action': action,
-            'position_size': position_size,
-            'predicted_class': ['up', 'down', 'flat'][predicted_class],
-            'confidence': max_prob,
-            'actual_return': actual_return,
-            'pnl': pnl,
-            'portfolio_value': portfolio_value
-        })
-
-    # 結果集計
-    total_trades = len([t for t in trades if t['action'] != 'hold'])
-    total_pnl = sum(t['pnl'] for t in trades)
-    final_return = (portfolio_value - 100000) / 100000
-
-    winning_trades = len([t for t in trades if t['pnl'] > 0])
-    win_rate = winning_trades / total_trades if total_trades > 0 else 0
-
-    print(f"\n📊 バックテスト結果:")
-    print(f"   期間: {len(trades)}時間")
-    print(f"   総取引数: {total_trades}")
-    print(f"   勝率: {win_rate:.1%}")
-    print(f"   総損益: {total_pnl:,.0f}円")
-    print(f"   最終収益率: {final_return:.2%}")
-    print(f"   最終資産: {portfolio_value:,.0f}円")
 
 def quick_prediction():
     """最新データでの予測例"""
@@ -289,7 +176,7 @@ def simple_backtest(model, scaler, config):
         p_down = result["probabilities"]["p_down"]
         edge = p_up - p_down
 
-        if result["class"] == 'flat' or conf < 0.5:
+        if result["class"] == 'flat' or conf < 0.4:
             continue
 
         correct = False
@@ -315,7 +202,6 @@ def simple_backtest(model, scaler, config):
     print(f"   総予測数: {total_predictions}")
     print(f"   正解数: {correct_predictions}")
     print(f"   精度: {accuracy:.1%}")
-    print(f"   失敗率: {correct_predictions}")
 
 def main():
     """メイン関数"""
@@ -328,10 +214,6 @@ def main():
 
         # テストデータ評価
         evaluate_on_test_data()
-
-        # バックテスト
-        backtest_simulation()
-
         # 簡易バックテスト
         simple_backtest(model, scaler, config)
 
