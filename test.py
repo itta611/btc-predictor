@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.btc_data import get_btc_data, create_features, prepare_data, BtcSequenceDataset
 from modeling.btc_model import BtcClassifier
+from predictor import predict_class, load_checkpoint
 
 def get_device():
     """デバイスを取得"""
@@ -28,49 +29,12 @@ MODEL_PATH = CHECKPOINT_DIR / "model.pt"
 SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
 CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
 
-def load_model():
-    """学習済みモデルを読み込み"""
-    print("📂 学習済みモデル読み込み中...")
-
-    # ファイルの存在確認
-    if not all([MODEL_PATH.exists(), SCALER_PATH.exists(), CONFIG_PATH.exists()]):
-        raise FileNotFoundError(
-            f"チェックポイントファイルが見つかりません。\n"
-            f"先に modeling/btc_train.py を実行してモデルを学習してください。"
-        )
-
-    # 設定を読み込み
-    with open(CONFIG_PATH, 'rb') as f:
-        config = pickle.load(f)
-
-    # スケーラーを読み込み
-    with open(SCALER_PATH, 'rb') as f:
-        scaler = pickle.load(f)
-
-    # モデルを再構築
-    model = BtcClassifier(
-        input_dim=config['input_dim'],
-        d_model=config['d_model'],
-        nhead=config['nhead'],
-        num_layers=config['num_layers'],
-        dropout=config['dropout']
-    )
-
-    # 学習済みの重みを読み込み
-    device = get_device()
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    model.to(device)
-    model.eval()
-
-    print(f"✅ モデル読み込み完了 (デバイス: {device})")
-    return model, scaler, config
-
 def evaluate_on_test_data():
     """テストデータで詳細な評価"""
     print("🔍 テストデータでの評価開始...")
 
     # モデル読み込み
-    model, scaler, config = load_model()
+    model, scaler, config = load_checkpoint()
 
     # テストデータ準備
     df = get_btc_data(period="2y", interval="1h")
@@ -150,7 +114,7 @@ def backtest_simulation():
     """取引シミュレーション（バックテスト）"""
     print("\n💰 取引シミュレーション開始...")
 
-    model, scaler, config = load_model()
+    model, scaler, config = load_checkpoint()
 
     # バックテスト用データ（最新1ヶ月）
     df = get_btc_data(period="1mo", interval="1h")
@@ -247,7 +211,7 @@ def quick_prediction():
     """最新データでの予測例"""
     print("\n🔮 最新データ予測...")
 
-    model, scaler, config = load_model()
+    model, scaler, config = load_checkpoint()
 
     # 最新データ取得
     df = get_btc_data(period="7d", interval="1h")
@@ -280,17 +244,96 @@ def quick_prediction():
     print(f"     Down: {probs[1]:.3f}")
     print(f"     Flat: {probs[2]:.3f}")
 
+# ===== 簡易バックテスト =====
+def simple_backtest(model, scaler, config):
+    # テスト用データ生成
+    df = get_btc_data(period="1mo", interval="1h")
+    df_with_features = create_features(df)
+
+    # 特徴量を取得
+    feature_cols = config['feature_columns']
+    features = df_with_features[feature_cols].values
+
+    # バックテストデータ（後半500サンプル）
+    test_start = len(features) - 500
+    L = config['sequence_length']
+    H = config['horizon']
+    thr = 0.9
+
+    trades = []
+    prices = df_with_features['Close'].values
+
+    for i in range(test_start + L, len(features) - H):
+        # 過去L本分の特徴量を取得
+        features_seq = features[i-L:i]
+
+        # 予測
+        result = predict_class(model, scaler, features_seq)
+
+        # 実際の将来リターン
+        current_price = prices[i]
+        future_price = prices[i + H]
+        actual_return = (future_price - current_price) / current_price
+
+        # 実際のクラス
+        if actual_return >= thr:
+            actual_class = "up"
+        elif actual_return <= -thr:
+            actual_class = "down"
+        else:
+            actual_class = "flat"
+
+        # トレード判定
+        conf = result["confidence"]
+        p_up = result["probabilities"]["p_up"]
+        p_down = result["probabilities"]["p_down"]
+        edge = p_up - p_down
+
+        if result["class"] == 'flat' or conf < 0.5:
+            continue
+
+        correct = False
+        if future_price > current_price and result["class"] == "up":
+            correct = True
+        elif future_price < current_price and result["class"] == "down":
+            correct = True
+
+        trades.append({
+            'predicted_class': result["class"],
+            'actual_class': actual_class,
+            'confidence': conf,
+            'actual_return': actual_return,
+            'correct': correct
+        })
+
+    # 成績集計
+    total_predictions = len(trades)
+    correct_predictions = sum(t['correct'] for t in trades)
+    accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+
+    print(f"\n📊 予測精度:")
+    print(f"   総予測数: {total_predictions}")
+    print(f"   正解数: {correct_predictions}")
+    print(f"   精度: {accuracy:.1%}")
+    print(f"   失敗率: {correct_predictions}")
+
 def main():
     """メイン関数"""
     print("🧪 ビットコイン分類モデル テスト実行")
     print("=" * 60)
 
     try:
+        # モデル読み込み
+        model, scaler, config = load_checkpoint()
+
         # テストデータ評価
         evaluate_on_test_data()
 
         # バックテスト
         backtest_simulation()
+
+        # 簡易バックテスト
+        simple_backtest(model, scaler, config)
 
         # 最新予測
         quick_prediction()
