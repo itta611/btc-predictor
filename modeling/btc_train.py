@@ -3,32 +3,46 @@
 ビットコイン分類モデルの学習スクリプト
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 import pickle
 from pathlib import Path
 
 # 自作モジュールをインポート
-from btc_data import get_btc_data, create_features, prepare_data, BtcSequenceDataset
-from btc_model import BtcClassifier
-from utils import get_device
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.btc_data import get_btc_data, create_features, prepare_data, BtcSequenceDataset
+from modeling.btc_model import BtcClassifier
+
+def get_device():
+    """デバイスを取得"""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        return torch.device('mps')
+    else:
+        return torch.device('cpu')
 
 # ===== 設定 =====
 # ハイパーパラメータ
 H = 4           # 予測ホライズン（何本後を予測するか）
-L = 256         # 入力系列長（何本分の履歴を見るか）
-thr = 0.004     # 上昇/下降を判定する閾値（0.4%）
-d_model = 128   # Transformerの隠れ層次元数
-nhead = 8       # Multi-Head Attentionのヘッド数
-num_layers = 4  # Transformerレイヤー数
+L = 128         # 入力系列長（何本分の履歴を見るか）
+thr = 0.008     # 上昇/下降を判定する閾値（0.8%）
+d_model = 64    # Transformerの隠れ層次元数
+nhead = 4       # Multi-Head Attentionのヘッド数
+num_layers = 2  # Transformerレイヤー数
 dropout = 0.1   # ドロップアウト率
 lr = 0.001      # 学習率
 batch_size = 64 # バッチサイズ
-max_epochs = 100
-patience = 10   # 早期終了の我慢回数
+max_epochs = 50
+patience = 5    # 早期終了の我慢回数
 
 # チェックポイント保存ディレクトリ
 CHECKPOINT_DIR = Path("checkpoints/btc_classifier")
@@ -39,15 +53,22 @@ SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
 CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
 
 # ===== 学習ループ =====
-def train_model(model, train_loader, val_loader, num_epochs=max_epochs, patience=patience):
+def train_model(model, train_loader, val_loader, class_weights=None, num_epochs=max_epochs, patience=patience):
     """
     モデルを学習し、早期終了とモデルチェックポイントを管理
     """
     print(f"🚀 学習開始 (最大{num_epochs}エポック, 早期終了patience={patience})")
 
-    # 損失関数と最適化器
-    criterion = nn.CrossEntropyLoss()
+    # 損失関数と最適化器（クラス重み付き）
+    device = next(model.parameters()).device
+    if class_weights is not None:
+        class_weights_tensor = torch.FloatTensor(class_weights).to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+    else:
+        criterion = nn.CrossEntropyLoss()
+
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     # 早期終了用の変数
     best_val_loss = float('inf')
@@ -121,6 +142,9 @@ def train_model(model, train_loader, val_loader, num_epochs=max_epochs, patience
         print(f"エポック {epoch+1:3d}: "
               f"Train Loss: {avg_train_loss:.4f} ({train_acc:.1f}%) | "
               f"Val Loss: {avg_val_loss:.4f} ({val_acc:.1f}%)")
+
+        # 学習率スケジューラの更新
+        scheduler.step(avg_val_loss)
 
         # 早期終了の判定
         if avg_val_loss < best_val_loss:
@@ -201,14 +225,7 @@ def save_checkpoint(model, scaler, config):
     print(f"   スケーラー: {SCALER_PATH}")
     print(f"   設定: {CONFIG_PATH}")
 
-# ===== メイン学習関数 =====
 def main():
-    """
-    メイン学習関数
-    """
-    print("🚀 ビットコイン価格分類モデル学習開始!")
-    print("=" * 60)
-
     # Step 1: データ読み込み（yfinanceから実際のBTCデータを取得）
     df = get_btc_data(period="2y", interval="1h")
 
@@ -239,8 +256,13 @@ def main():
     print(f"🔧 使用デバイス: {device}")
     print(f"🏗️  モデルパラメータ数: {sum(p.numel() for p in model.parameters()):,}")
 
+    # クラス重みを計算（不均衡データ対応）
+    unique_classes = np.unique(y_train)
+    class_weights = compute_class_weight('balanced', classes=unique_classes, y=y_train)
+    print(f"🎯 クラス重み: {dict(zip(unique_classes, class_weights))}")
+
     # Step 6: 学習
-    train_model(model, train_loader, val_loader)
+    train_model(model, train_loader, val_loader, class_weights)
 
     # Step 7: 評価
     evaluate_model(model, test_loader)
@@ -255,7 +277,7 @@ def main():
         'sequence_length': L,
         'horizon': H,
         'threshold': thr,
-        'feature_columns': ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff']
+        'feature_columns': ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']
     }
 
     save_checkpoint(model, scaler, config)

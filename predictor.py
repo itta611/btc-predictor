@@ -198,7 +198,7 @@ def simple_backtest(model, scaler, config):
     short_trades = [t for t in trades if t['action'] == 'short']
 
     # 手数料
-    fee_rate = 0.0004  # 0.04%
+    fee_rate = 0.000  # 0.04%
 
     total_pnl = 0
     successful_trades = 0

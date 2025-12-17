@@ -68,19 +68,46 @@ def create_features(df):
     # 3. close_pos: 高値安値範囲での終値位置（0=安値、1=高値）
     data['close_pos'] = (data['Close'] - data['Low']) / (data['High'] - data['Low'] + 1e-9)
 
-    # 4. vol_chg: 出来高変化率（20期間移動平均との比較）
-    vol_ma20 = data['Volume'].rolling(20).mean()
-    data['vol_chg'] = data['Volume'] / vol_ma20 - 1
+    # 4. vol_chg: 出来高変化率（対数変換で正規化）
+    vol_ma10 = data['Volume'].rolling(10).mean()
+    data['vol_chg'] = np.log((data['Volume'] + 1e-9) / (vol_ma10 + 1e-9))
+    # 異常値をクリップ
+    data['vol_chg'] = np.clip(data['vol_chg'], -5, 5)
 
     # 5. ma20_diff: 20期間移動平均からの乖離率
     close_ma20 = data['Close'].rolling(20).mean()
     data['ma20_diff'] = data['Close'] / close_ma20 - 1
 
+    # 6. モメンタム指標（RSI）
+    delta = data['Close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta).where(delta < 0, 0).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    data['rsi'] = 100 - 100 / (1 + rs)
+    data['rsi'] = (data['rsi'] - 50) / 50  # [-1, 1]に正規化
+
+    # 7. ボリンジャーバンド位置
+    bb_window = 20
+    bb_std = 2
+    sma = data['Close'].rolling(bb_window).mean()
+    std = data['Close'].rolling(bb_window).std()
+    upper_band = sma + bb_std * std
+    lower_band = sma - bb_std * std
+    data['bb_position'] = (data['Close'] - lower_band) / (upper_band - lower_band + 1e-9)
+    # 異常値をクリップ
+    data['bb_position'] = np.clip(data['bb_position'], -2, 3)
+
     # NaN（欠損値）を除去（ローリング計算で最初の20期間がNaN）
     data = data.dropna()
 
+    # 全ての特徴量の異常値をチェック・修正
+    for col in ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']:
+        # 無限値をNaNに置換してから除去
+        data = data.replace([np.inf, -np.inf], np.nan)
+    data = data.dropna()
+
     print(f"✅ 特徴量作成完了。データ数: {len(data)}")
-    print(f"📈 特徴量: {['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff']}")
+    print(f"📈 特徴量: {['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']}")
 
     return data
 
@@ -160,10 +187,9 @@ def prepare_data(df, horizon=4, threshold=0.004):
     """
     データを訓練/検証/テストに分割し、正規化を適用
     """
-    print("📊 データ分割・正規化中...")
 
     # 特徴量列を取得
-    feature_cols = ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff']
+    feature_cols = ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']
     features = df[feature_cols].values  # [N, F]
 
     # ラベル生成
