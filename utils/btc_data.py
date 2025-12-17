@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-ビットコイン分類モデル用のデータ処理モジュール
-"""
-
 import numpy as np
 import pandas as pd
 import torch

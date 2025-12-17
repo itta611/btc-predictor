@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-ビットコイン分類モデルの推論スクリプト
-"""
-
 import torch
 import numpy as np
 import pickle
@@ -13,7 +8,6 @@ from modeling.btc_model import BtcClassifier
 from utils.get_device import get_device
 from utils.btc_data import get_btc_data, create_features
 
-# ===== 設定 =====
 CHECKPOINT_DIR = Path("checkpoints/btc_classifier")
 MODEL_PATH = CHECKPOINT_DIR / "model.pt"
 SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
@@ -21,9 +15,6 @@ CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
 
 # ===== チェックポイント読み込み =====
 def load_checkpoint():
-    """
-    保存されたチェックポイントからモデル、スケーラー、設定を読み込み
-    """
     print("📂 チェックポイント読み込み中...")
 
     # ファイルの存在確認
@@ -125,11 +116,6 @@ def predict_class(model, scaler, features_sequence):
 
 # ===== 簡易バックテスト =====
 def simple_backtest(model, scaler, config):
-    """
-    簡単な取引シミュレーションを実行
-    """
-    print("💰 簡易バックテスト実行中...")
-
     # テスト用データ生成
     df = get_btc_data(period="1mo", interval="1h")
     df_with_features = create_features(df)
@@ -142,7 +128,7 @@ def simple_backtest(model, scaler, config):
     test_start = len(features) - 500
     L = config['sequence_length']
     H = config['horizon']
-    thr = config['threshold']
+    thr = 0.9
 
     trades = []
     prices = df_with_features['Close'].values
@@ -173,19 +159,21 @@ def simple_backtest(model, scaler, config):
         p_down = result["probabilities"]["p_down"]
         edge = p_up - p_down
 
-        action = 'hold'
-        if conf >= 0.55 and edge >= 0.10:
-            action = 'long'
-        elif conf >= 0.55 and edge <= -0.10:
-            action = 'short'
+        if result["class"] == 'flat' or conf < 0.5:
+            continue
+
+        correct = False
+        if future_price > current_price and result["class"] == "up":
+            correct = True
+        elif future_price < current_price and result["class"] == "down":
+            correct = True
 
         trades.append({
-            'action': action,
             'predicted_class': result["class"],
             'actual_class': actual_class,
             'confidence': conf,
             'actual_return': actual_return,
-            'correct': result["class"] == actual_class
+            'correct': correct
         })
 
     # 成績集計
@@ -193,50 +181,11 @@ def simple_backtest(model, scaler, config):
     correct_predictions = sum(t['correct'] for t in trades)
     accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
 
-    total_trades = len([t for t in trades if t['action'] != 'hold'])
-    long_trades = [t for t in trades if t['action'] == 'long']
-    short_trades = [t for t in trades if t['action'] == 'short']
-
-    # 手数料
-    fee_rate = 0.000  # 0.04%
-
-    total_pnl = 0
-    successful_trades = 0
-
-    for trade in trades:
-        if trade['action'] == 'long':
-            # ロングが成功 = 実際に上昇
-            if trade['actual_class'] == 'up':
-                pnl = thr - fee_rate  # 利益 - 手数料
-                successful_trades += 1
-            else:
-                pnl = -thr - fee_rate  # 損失 - 手数料
-            total_pnl += pnl
-
-        elif trade['action'] == 'short':
-            # ショートが成功 = 実際に下降
-            if trade['actual_class'] == 'down':
-                pnl = thr - fee_rate
-                successful_trades += 1
-            else:
-                pnl = -thr - fee_rate
-            total_pnl += pnl
-
-    trade_win_rate = successful_trades / total_trades if total_trades > 0 else 0
-    avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
-
     print(f"\n📊 予測精度:")
     print(f"   総予測数: {total_predictions}")
     print(f"   正解数: {correct_predictions}")
     print(f"   精度: {accuracy:.1%}")
-
-    print(f"\n💼 取引シミュレーション結果:")
-    print(f"   総取引数: {total_trades}")
-    print(f"   ロング: {len(long_trades)}, ショート: {len(short_trades)}")
-    print(f"   取引勝率: {trade_win_rate:.1%}")
-    print(f"   総損益: {total_pnl:.1%}")
-    print(f"   平均損益: {avg_pnl:.3%}")
-    print(f"   手数料考慮済み (片道{fee_rate:.2%})")
+    print(f"   失敗率: {correct_predictions}")
 
 # ===== サンプル推論 =====
 def run_sample_prediction(model, scaler, config):

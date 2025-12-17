@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-ビットコイン分類モデルのテスト・評価スクリプト
-"""
-
 import numpy as np
 import torch
 import pickle
