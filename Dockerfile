@@ -19,6 +19,7 @@ COPY app.py .
 COPY predictor.py .
 COPY config.py .
 COPY utils/ ./utils/
+COPY modeling/ ./modeling/
 COPY checkpoints/ ./checkpoints/
 
 # コンテナ起動時に実行するコマンド
