@@ -5,7 +5,7 @@ from pathlib import Path
 # --- データ関連 ---
 # yfinanceから取得するデータの期間と間隔
 DATA_PERIOD = "2y"
-DATA_INTERVAL = "1h"
+DATA_INTERVAL = "4h"
 
 # 使用する特徴量のリスト
 FEATURE_COLUMNS = [
@@ -13,9 +13,9 @@ FEATURE_COLUMNS = [
 ]
 
 # --- モデルハイパーパラメータ ---
-H = 4               # 予測ホライズン（何本後の価格を予測するか）
+H = 10               # 予測ホライズン（何本後の価格を予測するか）
 L = 128             # 入力系列長（過去何本分のデータを見るか）
-THR = 0.008         # 上昇/下降を判定するリターンの閾値
+THR = 0.008         # 上昇を判定するリターンの閾値
 
 # Transformerモデルのパラメータ
 D_MODEL = 64        # 隠れ層の次元数
