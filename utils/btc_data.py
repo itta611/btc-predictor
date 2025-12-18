@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import warnings
+import config
+
 warnings.filterwarnings('ignore')
 
 # ===== yfinanceを使用したビットコインデータ取得 =====
@@ -37,27 +39,25 @@ def create_features(df):
     data['log_return'] = np.log(data['Close'] / data['Close'].shift(1))
     data['hl_range'] = (data['High'] - data['Low']) / data['Close']
     data['close_pos'] = (data['Close'] - data['Low']) / (data['High'] - data['Low'] + 1e-9)
-    vol_ma10 = data['Volume'].rolling(10).mean()
-    data['vol_chg'] = np.log((data['Volume'] + 1e-9) / (vol_ma10 + 1e-9))
-    data['vol_chg'] = np.clip(data['vol_chg'], -5, 5)
-    close_ma20 = data['Close'].rolling(20).mean()
-    data['ma20_diff'] = data['Close'] / close_ma20 - 1
+    vol_ma = data['Volume'].rolling(config.VOL_MA_WINDOW).mean()
+    data['vol_chg'] = np.log((data['Volume'] + 1e-9) / (vol_ma + 1e-9))
+    data['vol_chg'] = np.clip(data['vol_chg'], config.VOL_CHG_CLIP_MIN, config.VOL_CHG_CLIP_MAX)
+    close_ma = data['Close'].rolling(config.CLOSE_MA_WINDOW).mean()
+    data['ma20_diff'] = data['Close'] / close_ma - 1
     delta = data['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = (-delta).where(delta < 0, 0).rolling(14).mean()
+    gain = delta.where(delta > 0, 0).rolling(config.RSI_WINDOW).mean()
+    loss = (-delta).where(delta < 0, 0).rolling(config.RSI_WINDOW).mean()
     rs = gain / (loss + 1e-9)
     data['rsi'] = 100 - 100 / (1 + rs)
     data['rsi'] = (data['rsi'] - 50) / 50
-    bb_window = 20
-    bb_std = 2
-    sma = data['Close'].rolling(bb_window).mean()
-    std = data['Close'].rolling(bb_window).std()
-    upper_band = sma + bb_std * std
-    lower_band = sma - bb_std * std
+    sma = data['Close'].rolling(config.BB_WINDOW).mean()
+    std = data['Close'].rolling(config.BB_WINDOW).std()
+    upper_band = sma + config.BB_STD * std
+    lower_band = sma - config.BB_STD * std
     data['bb_position'] = (data['Close'] - lower_band) / (upper_band - lower_band + 1e-9)
-    data['bb_position'] = np.clip(data['bb_position'], -2, 3)
+    data['bb_position'] = np.clip(data['bb_position'], config.BB_POSITION_CLIP_MIN, config.BB_POSITION_CLIP_MAX)
     data = data.dropna()
-    for col in ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']:
+    for col in config.FEATURE_COLUMNS:
         data = data.replace([np.inf, -np.inf], np.nan)
     data = data.dropna()
     print(f"✅ 特徴量作成完了。データ数: {len(data)}")
@@ -110,15 +110,14 @@ class BtcSequenceDataset(Dataset):
 
 # ===== データ分割と前処理 =====
 def prepare_data(df, horizon=4, threshold=0.008):
-    feature_cols = ['log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position']
-    features = df[feature_cols].values
+    features = df[config.FEATURE_COLUMNS].values
     labels, valid_mask = create_labels(df, horizon, threshold)
     features = features[valid_mask]
     labels = labels[valid_mask]
 
     n_total = len(features)
-    n_train = int(0.7 * n_total)
-    n_val = int(0.15 * n_total)
+    n_train = int(config.TRAIN_SIZE * n_total)
+    n_val = int(config.VAL_SIZE * n_total)
 
     X_train = features[:n_train]
     X_val = features[n_train:n_train+n_val]

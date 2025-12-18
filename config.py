@@ -12,9 +12,25 @@ DATA_INTERVAL = "1h"
 FEATURE_COLUMNS = [
     'log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position'
 ]
+TRAIN_SIZE = 0.7
+VAL_SIZE = 0.15
+# TEST_SIZEは(1 - TRAIN_SIZE - VAL_SIZE)で自動的に決まる
+CLASS_NAMES = ['Not-Up', 'Up']
+
+# --- 特徴量エンジニアリング関連 ---
+VOL_MA_WINDOW = 10
+VOL_CHG_CLIP_MIN = -5
+VOL_CHG_CLIP_MAX = 5
+CLOSE_MA_WINDOW = 20
+RSI_WINDOW = 14
+BB_WINDOW = 20
+BB_STD = 2
+BB_POSITION_CLIP_MIN = -2
+BB_POSITION_CLIP_MAX = 3
+
 
 # --- モデルハイパーパラメータ ---
-H = 8
+H = 8 # 8時間後の価格変動を予測
 L = 64
 THR = 0.008
 D_MODEL = 128
@@ -24,9 +40,21 @@ DROPOUT = 0.1
 
 # --- 学習ハイパーパラメータ ---
 LR = 0.001
+WEIGHT_DECAY = 1e-5
 BATCH_SIZE = 64
 MAX_EPOCHS = 50
 PATIENCE = 5
+SCHEDULER_PATIENCE = 3
+SCHEDULER_FACTOR = 0.5
+CLIP_GRAD_NORM = 1.0
+
+# --- 評価・シミュレーション関連 ---
+EVAL_RETURN_THRESHOLD = 0
+SIM_DAYS = 30
+HOLD_PERIOD = 8
+FEE_RATE = 0.0004
+CONFIDENCE_THRESHOLD = 0.60
+SIM_OFFSET_DAYS = 60
 
 # --- パス設定 (プロジェクトルートからの絶対パスに) ---
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints" / "btc_classifier"

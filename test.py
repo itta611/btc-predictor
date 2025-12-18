@@ -15,13 +15,15 @@ def run_evaluation(model, scaler):
     テストデータ全体でモデルの予測性能を評価する。
     """
     print("\n📊 モデル予測性能評価...")
-    print(f"   (学習目標: {config.THR*100:.2f}%以上の上昇 | 評価基準: 0%以上の上昇)")
+    print(f"   (学習目標: {config.THR*100:.2f}%以上の上昇 | 評価基準: {config.EVAL_RETURN_THRESHOLD*100:.2f}%以上の上昇)")
 
     df = get_btc_data(period=config.DATA_PERIOD, interval=config.DATA_INTERVAL)
     df_with_features = create_features(df)
     _, valid_mask = create_labels(df_with_features, horizon=config.H, threshold=config.THR)
     df_valid = df_with_features[valid_mask]
-    n_total, n_train, n_val = len(df_valid), int(0.7 * len(df_valid)), int(0.15 * len(df_valid))
+    n_total = len(df_valid)
+    n_train = int(config.TRAIN_SIZE * n_total)
+    n_val = int(config.VAL_SIZE * n_total)
     test_start_index = n_train + n_val
 
     features = df_valid[config.FEATURE_COLUMNS].values
@@ -34,7 +36,7 @@ def run_evaluation(model, scaler):
         y_predictions.append(1 if result['class'] == 'up' else 0)
         
         actual_return = (prices[i + config.H] - prices[i]) / prices[i]
-        y_true_for_eval.append(1 if actual_return > 0 else 0)
+        y_true_for_eval.append(1 if actual_return > config.EVAL_RETURN_THRESHOLD else 0)
 
     if not y_predictions:
         print("   評価対象データなし。")
@@ -43,12 +45,12 @@ def run_evaluation(model, scaler):
     print("\n" + "="*50)
     print("📈 評価サマリー")
     print("="*50)
-    report = classification_report(y_true_for_eval, y_predictions, target_names=['Not-Up', 'Up'], output_dict=True, zero_division=0)
+    report = classification_report(y_true_for_eval, y_predictions, target_names=config.CLASS_NAMES, output_dict=True, zero_division=0)
     up_precision = report['Up']['precision']
     print(f"\n🎯 **『上がる』と予測した時の成功率 (適合率): {up_precision:.1%}**")
     print(f"   (「Up」と予測した {report['Up']['support']} 件のうち、実際に価格が上昇した割合)")
     print("\n📊 詳細分類レポート:")
-    print(classification_report(y_true_for_eval, y_predictions, target_names=['Not-Up', 'Up'], zero_division=0))
+    print(classification_report(y_true_for_eval, y_predictions, target_names=config.CLASS_NAMES, zero_division=0))
 
 def run_trading_simulation(model, scaler, title, offset_days=0):
     """
@@ -60,8 +62,7 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     print("="*50)
 
     # --- データ準備 ---
-    SIM_DAYS = 30
-    SIM_HOURS = SIM_DAYS * 24
+    SIM_HOURS = config.SIM_DAYS * 24
     OFFSET_HOURS = offset_days * 24
     
     df = get_btc_data(period=config.DATA_PERIOD, interval="1h")
@@ -83,9 +84,6 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     btc_amount = 0.0
     position = 'none'
     exit_time = -1  # ポジションを決済する時刻を保持
-    HOLD_PERIOD = 8 # 8時間ホールド
-    fee_rate = 0.0004
-    confidence_threshold = 0.60
     trade_count = 0
     portfolio_history = []
 
@@ -95,28 +93,26 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
         
         # --- 1. 強制決済の確認 ---
         if position == 'long' and i == exit_time:
-            balance = (btc_amount * current_price) * (1 - fee_rate)
+            balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
             btc_amount = 0.0
             position = 'none'
             exit_time = -1
             trade_count += 1 # 1回のラウンドトリップ取引が完了
-            print(f"   {df_with_features.index[i]}: 🔒 SELL (8H Hold) @ ${current_price:,.2f} | Balance: ${balance:,.2f}")
-            
-            # この時間は決済のみで、新規購入は次の時間から
+            # print(f"   {df_with_features.index[i]}: 🔒 SELL ({config.HOLD_PERIOD}H Hold) @ ${current_price:,.2f} | Balance: ${balance:,.2f}")
+
             portfolio_history.append(balance)
-            continue
 
         # --- 2. 新規購入の判断 (ポジションがない場合のみ) ---
         if position == 'none':
             features_seq = features[i-config.L:i]
             result = predict_class(model, scaler, features_seq)
 
-            if result['class'] == 'up' and result['confidence'] >= confidence_threshold:
-                btc_amount = (balance / current_price) * (1 - fee_rate)
+            if result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD:
+                btc_amount = (balance / current_price) * (1 - config.FEE_RATE)
                 balance = 0.0
                 position = 'long'
-                exit_time = i + HOLD_PERIOD # 8時間後に売る時間をセット
-                print(f"   {df_with_features.index[i]}: 🟢 BUY  @ ${current_price:,.2f}")
+                exit_time = i + config.HOLD_PERIOD # 8時間後に売る時間をセット
+                # print(f"   {df_with_features.index[i]}: 🟢 BUY  @ ${current_price:,.2f}")
 
         # ポートフォリオ評価 (毎時間)
         portfolio_value = balance + (btc_amount * current_price)
@@ -148,7 +144,7 @@ def main():
         run_evaluation(model, scaler)
         
         run_trading_simulation(model, scaler, title="直近30日間", offset_days=0)
-        run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=60)
+        run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=config.SIM_OFFSET_DAYS)
 
         print("\n" + "=" * 60)
         print("✅ 全処理完了!")

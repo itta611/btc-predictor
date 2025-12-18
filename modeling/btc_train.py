@@ -30,8 +30,8 @@ def train_model(model, train_loader, val_loader, class_weights=None):
     print(f"🚀 学習開始 (最大{config.MAX_EPOCHS}エポック, 早期終了patience={config.PATIENCE})")
     device = next(model.parameters()).device
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(class_weights).to(device) if class_weights is not None else None)
-    optimizer = optim.Adam(model.parameters(), lr=config.LR, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+    optimizer = optim.Adam(model.parameters(), lr=config.LR, weight_decay=config.WEIGHT_DECAY)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.SCHEDULER_FACTOR, patience=config.SCHEDULER_PATIENCE)
 
     best_val_loss = float('inf')
     patience_counter = 0
@@ -46,7 +46,7 @@ def train_model(model, train_loader, val_loader, class_weights=None):
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.CLIP_GRAD_NORM)
             optimizer.step()
             train_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -100,13 +100,12 @@ def evaluate_model(model, test_loader):
             all_predictions.extend(predicted.cpu().numpy())
             all_targets.extend(batch_y.cpu().numpy())
 
-    class_names = ['Not-Up', 'Up']
     print("\n📊 分類レポート:")
-    print(classification_report(all_targets, all_predictions, target_names=class_names))
+    print(classification_report(all_targets, all_predictions, target_names=config.CLASS_NAMES))
     print("\n🔄 混同行列:")
     cm = confusion_matrix(all_targets, all_predictions)
-    print("      ", "  ".join([f"{name:>6}" for name in class_names]))
-    for true_name, row in zip(class_names, cm):
+    print("      ", "  ".join([f"{name:>6}" for name in config.CLASS_NAMES]))
+    for true_name, row in zip(config.CLASS_NAMES, cm):
         print(f"{true_name:>6}: {' '.join([f'{val:6d}' for val in row])}")
 
 def save_checkpoint(model, scaler):
