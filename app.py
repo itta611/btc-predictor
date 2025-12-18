@@ -12,7 +12,7 @@ from predictor import predict_class, load_checkpoint
 import config
 
 # BitflyerのETHの最小注文数量。
-MIN_ORDER_ETH = 0.01 
+MIN_ORDER_ETH = 0.01
 
 def get_api():
     """Bitflyer APIオブジェクトを取得する"""

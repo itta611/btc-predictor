@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).parent
 # --- 取引設定 ---
 # DRY_RUN = Trueにすると、実際の注文は行わず、ログに何をするかだけ表示します。
 # 本番環境で動かす前に、必ずTrueでテストしてください。
-DRY_RUN = True
+DRY_RUN = False
 
 # --- Bitflyer API ---
 # DRY_RUN = False の場合のみ必要です
