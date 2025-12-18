@@ -2,36 +2,34 @@
 
 from pathlib import Path
 
-# --- データ関連 ---
-# yfinanceから取得するデータの期間と間隔
-DATA_PERIOD = "2y"
-DATA_INTERVAL = "4h"
+# --- プロジェクトのルートディレクトリを取得 ---
+# このconfig.pyファイル自身の場所を基準にします
+PROJECT_ROOT = Path(__file__).parent
 
-# 使用する特徴量のリスト
+# --- データ関連 ---
+DATA_PERIOD = "2y"
+DATA_INTERVAL = "1h"
 FEATURE_COLUMNS = [
     'log_return', 'hl_range', 'close_pos', 'vol_chg', 'ma20_diff', 'rsi', 'bb_position'
 ]
 
 # --- モデルハイパーパラメータ ---
-H = 10               # 予測ホライズン（何本後の価格を予測するか）
-L = 128             # 入力系列長（過去何本分のデータを見るか）
-THR = 0.008         # 上昇を判定するリターンの閾値
-
-# Transformerモデルのパラメータ
-D_MODEL = 64        # 隠れ層の次元数
-NHEAD = 4           # Multi-Head Attentionのヘッド数
-NUM_LAYERS = 2      # Transformerエンコーダー層の数
-DROPOUT = 0.1       # ドロップアウト率
+H = 16
+L = 64
+THR = 0.008
+D_MODEL = 256
+NHEAD = 4
+NUM_LAYERS = 2
+DROPOUT = 0.1
 
 # --- 学習ハイパーパラメータ ---
-LR = 0.001          # 学習率
-BATCH_SIZE = 64     # バッチサイズ
-MAX_EPOCHS = 50     # 最大エポック数
-PATIENCE = 5        # 早期終了のカウンタ
+LR = 0.001
+BATCH_SIZE = 64
+MAX_EPOCHS = 50
+PATIENCE = 5
 
-# --- パス設定 ---
-# チェックポイント（学習済みモデルなど）の保存先
-CHECKPOINT_DIR = Path("checkpoints/btc_classifier")
+# --- パス設定 (プロジェクトルートからの絶対パスに) ---
+CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints" / "btc_classifier"
 MODEL_PATH = CHECKPOINT_DIR / "model.pt"
 SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
 
