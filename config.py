@@ -30,7 +30,7 @@ BB_POSITION_CLIP_MAX = 3
 
 
 # --- モデルハイパーパラメータ ---
-H = 8 # 8時間後の価格変動を予測
+H = 12 # 8時間後の価格変動を予測
 L = 64
 THR = 0.008
 D_MODEL = 128
@@ -51,7 +51,7 @@ CLIP_GRAD_NORM = 1.0
 # --- 評価・シミュレーション関連 ---
 EVAL_RETURN_THRESHOLD = 0
 SIM_DAYS = 30
-HOLD_PERIOD = 8
+HOLD_PERIOD = 12
 FEE_RATE = 0.0004
 CONFIDENCE_THRESHOLD = 0.60
 SIM_OFFSET_DAYS = 60
