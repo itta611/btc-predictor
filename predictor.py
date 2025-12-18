@@ -7,62 +7,47 @@ import argparse
 from modeling.btc_model import BtcClassifier
 from utils.get_device import get_device
 from utils.btc_data import get_btc_data, create_features
-
-CHECKPOINT_DIR = Path("checkpoints/btc_classifier")
-MODEL_PATH = CHECKPOINT_DIR / "model.pt"
-SCALER_PATH = CHECKPOINT_DIR / "scaler.pkl"
-CONFIG_PATH = CHECKPOINT_DIR / "config.pkl"
+import config
 
 def load_checkpoint():
     print("📂 チェックポイント読み込み中...")
 
     # ファイルの存在確認
-    if not all([MODEL_PATH.exists(), SCALER_PATH.exists(), CONFIG_PATH.exists()]):
+    if not all([config.MODEL_PATH.exists(), config.SCALER_PATH.exists()]):
         raise FileNotFoundError(
             f"チェックポイントファイルが見つかりません。\n"
             f"先に btc_train.py を実行してモデルを学習してください。\n"
-            f"必要ファイル: {MODEL_PATH}, {SCALER_PATH}, {CONFIG_PATH}"
+            f"必要ファイル: {config.MODEL_PATH}, {config.SCALER_PATH}"
         )
 
-    # 設定を読み込み
-    with open(CONFIG_PATH, 'rb') as f:
-        config = pickle.load(f)
-
     # スケーラーを読み込み
-    with open(SCALER_PATH, 'rb') as f:
+    with open(config.SCALER_PATH, 'rb') as f:
         scaler = pickle.load(f)
 
     # モデルを再構築
+    input_dim = len(config.FEATURE_COLUMNS)
     model = BtcClassifier(
-        input_dim=config['input_dim'],
-        d_model=config['d_model'],
-        nhead=config['nhead'],
-        num_layers=config['num_layers'],
-        dropout=config['dropout']
+        input_dim=input_dim,
+        d_model=config.D_MODEL,
+        nhead=config.NHEAD,
+        num_layers=config.NUM_LAYERS,
+        dropout=config.DROPOUT
     )
 
     # 学習済みの重みを読み込み
     device = get_device()
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.load_state_dict(torch.load(config.MODEL_PATH, map_location=device))
     model.to(device)
     model.eval()  # 推論モードに設定
 
     print(f"   使用デバイス: {device}")
 
-    return model, scaler, config
+    return model, scaler
 
 # ===== 推論関数 =====
 def predict_proba(model, scaler, features_sequence):
     """
     1つのシーケンスに対して予測確率を返す
-
-    Args:
-        model: 学習済みモデル
-        scaler: 学習時に使ったスケーラー
-        features_sequence: [L, F] の特徴量系列
-
-    Returns:
-        dict: {"p_up": float, "p_down": float, "p_flat": float}
     """
     device = next(model.parameters()).device
 
@@ -71,11 +56,11 @@ def predict_proba(model, scaler, features_sequence):
     features_scaled = features_scaled.reshape(features_sequence.shape)
 
     # テンソル化してバッチ次元追加
-    X = torch.FloatTensor(features_scaled).unsqueeze(0).to(device)  # [1, L, F]
+    X = torch.FloatTensor(features_scaled).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        logits = model(X)  # [1, 3]
-        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]  # [3]
+        logits = model(X)
+        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
 
     return {
         "p_up": float(probs[0]),
@@ -86,18 +71,9 @@ def predict_proba(model, scaler, features_sequence):
 def predict_class(model, scaler, features_sequence):
     """
     1つのシーケンスに対して予測クラスを返す
-
-    Args:
-        model: 学習済みモデル
-        scaler: 学習時に使ったスケーラー
-        features_sequence: [L, F] の特徴量系列
-
-    Returns:
-        dict: {"class": str, "confidence": float, "probabilities": dict}
     """
     probs = predict_proba(model, scaler, features_sequence)
 
-    # 最も確率の高いクラスを選択
     class_names = ["up", "down", "flat"]
     class_probs = [probs["p_up"], probs["p_down"], probs["p_flat"]]
 
@@ -112,18 +88,16 @@ def predict_class(model, scaler, features_sequence):
     }
 
 # ===== サンプル推論 =====
-def run_sample_prediction(model, scaler, config):
+def run_sample_prediction(model, scaler):
     # サンプルデータ生成
     df = get_btc_data(period="7d", interval="1h")
     df_with_features = create_features(df)
 
     # 特徴量を取得
-    feature_cols = config['feature_columns']
-    features = df_with_features[feature_cols].values
+    features = df_with_features[config.FEATURE_COLUMNS].values
 
     # 最新のL本分を使って推論
-    L = config['sequence_length']
-    latest_features = features[-L:]
+    latest_features = features[-config.L:]
 
     # 推論実行
     result = predict_class(model, scaler, latest_features)
@@ -150,13 +124,11 @@ def run_sample_prediction(model, scaler, config):
 def main():
     try:
         # チェックポイント読み込み
-        model, scaler, config = load_checkpoint()
-
-        run_sample_prediction(model, scaler, config)
+        model, scaler = load_checkpoint()
+        run_sample_prediction(model, scaler)
 
     except FileNotFoundError as e:
-        print("モデルファイルが見つかりませんでした。")
-
+        print(f"モデルファイルが見つかりませんでした。\n{e}")
     except Exception as e:
         print(e)
 
