@@ -14,10 +14,10 @@ FEATURE_COLUMNS = [
 ]
 
 # --- モデルハイパーパラメータ ---
-H = 16
+H = 8
 L = 64
 THR = 0.008
-D_MODEL = 256
+D_MODEL = 128
 NHEAD = 4
 NUM_LAYERS = 2
 DROPOUT = 0.1
