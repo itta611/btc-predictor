@@ -6,6 +6,16 @@ from pathlib import Path
 # このconfig.pyファイル自身の場所を基準にします
 PROJECT_ROOT = Path(__file__).parent
 
+# --- 取引設定 ---
+# DRY_RUN = Trueにすると、実際の注文は行わず、ログに何をするかだけ表示します。
+# 本番環境で動かす前に、必ずTrueでテストしてください。
+DRY_RUN = True
+
+# --- Bitflyer API ---
+# DRY_RUN = False の場合のみ必要です
+BITFLYER_API_KEY = "BITFLYER_API_KEY"
+BITFLYER_API_SECRET = "BITFLYER_API_SECRET"
+
 # --- データ関連 ---
 DATA_PERIOD = "2y"
 DATA_INTERVAL = "1h"
