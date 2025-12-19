@@ -60,11 +60,11 @@ CLIP_GRAD_NORM = 1.0
 
 # --- 評価・シミュレーション関連 ---
 EVAL_RETURN_THRESHOLD = 0
-SIM_DAYS = 30
+SIM_DAYS = 365
 HOLD_PERIOD = 12
 FEE_RATE = 0.0004
 CONFIDENCE_THRESHOLD = 0.60
-SIM_OFFSET_DAYS = 60
+STOP_LOSS_THRESHOLD = 0.03 # 5%価格が下落したら損切り
 
 # --- パス設定 (プロジェクトルートからの絶対パスに) ---
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints" / "btc_classifier"

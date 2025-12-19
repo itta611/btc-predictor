@@ -55,12 +55,8 @@ def run_evaluation(model, scaler):
 def run_trading_simulation(model, scaler, title, offset_days=0):
     """
     指定された期間で取引シミュレーションを実行する。
-    ルール：'Up'予測で買い、8時間後に強制決済。
+    ルール：'Up'予測で買い、一定時間後または損切り条件で決済。
     """
-    print("\n" + "="*50)
-    print(f"📈 取引シミュレーション ({title})")
-    print("="*50)
-
     # --- データ準備 ---
     SIM_HOURS = config.SIM_DAYS * 24
     OFFSET_HOURS = offset_days * 24
@@ -83,36 +79,54 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     balance = initial_balance
     btc_amount = 0.0
     position = 'none'
-    exit_time = -1  # ポジションを決済する時刻を保持
+    exit_time = -1
+    entry_price = 0 # 購入価格を記録
     trade_count = 0
+    win_count = 0
+    stop_loss_count = 0
     portfolio_history = []
 
     # --- シミュレーションループ ---
     for i in range(sim_start_index, sim_end_index):
         current_price = prices[i]
         
-        # --- 1. 強制決済の確認 ---
-        if position == 'long' and i == exit_time:
-            balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
-            btc_amount = 0.0
-            position = 'none'
-            exit_time = -1
-            trade_count += 1 # 1回のラウンドトリップ取引が完了
-            # print(f"   {df_with_features.index[i]}: 🔒 SELL ({config.HOLD_PERIOD}H Hold) @ ${current_price:,.2f} | Balance: ${balance:,.2f}")
+        # --- 1. 決済の確認 ---
+        if position == 'long':
+            is_exit = False
+            # 1a. 損切り決済
+            if current_price < entry_price * (1 - config.STOP_LOSS_THRESHOLD):
+                is_exit = True
+                stop_loss_count += 1
 
-            portfolio_history.append(balance)
+            # 1b. 時間経過による強制決済
+            elif i == exit_time:
+                is_exit = True
+
+            if is_exit:
+                # 決済処理
+                balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
+                
+                # 勝敗判定 (手数料は考慮せず、価格の上下のみで判断)
+                if current_price > entry_price:
+                    win_count += 1
+
+                # ポジションリセット
+                btc_amount = 0.0
+                position = 'none'
+                trade_count += 1
 
         # --- 2. 新規購入の判断 (ポジションがない場合のみ) ---
         if position == 'none':
-            features_seq = features[i-config.L:i]
-            result = predict_class(model, scaler, features_seq)
+            if i >= config.L:
+                features_seq = features[i-config.L:i]
+                result = predict_class(model, scaler, features_seq)
 
-            if result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD:
-                btc_amount = (balance / current_price) * (1 - config.FEE_RATE)
-                balance = 0.0
-                position = 'long'
-                exit_time = i + config.HOLD_PERIOD # 8時間後に売る時間をセット
-                # print(f"   {df_with_features.index[i]}: 🟢 BUY  @ ${current_price:,.2f}")
+                if result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD:
+                    btc_amount = (balance / current_price) * (1 - config.FEE_RATE)
+                    balance = 0.0
+                    position = 'long'
+                    exit_time = i + config.HOLD_PERIOD
+                    entry_price = current_price # 購入価格を記録
 
         # ポートフォリオ評価 (毎時間)
         portfolio_value = balance + (btc_amount * current_price)
@@ -121,6 +135,7 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     # --- 結果集計 ---
     final_portfolio_value = portfolio_history[-1]
     total_return = (final_portfolio_value / initial_balance - 1) * 100
+    win_rate = (win_count / trade_count) * 100 if trade_count > 0 else 0
     
     buy_hold_value = (initial_balance / prices[sim_start_index]) * prices[sim_end_index-1]
     buy_hold_return = (buy_hold_value / initial_balance - 1) * 100
@@ -128,7 +143,8 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     print(f"\n--- {title} 結果 ---")
     print(f"   最終資産: ${final_portfolio_value:,.2f}")
     print(f"   総リターン: {total_return:.2f}%")
-    print(f"   取引回数: {trade_count}回")
+    print(f"   取引回数: {trade_count}回 (勝率: {win_rate:.1f}%)")
+    print(f"   損切り回数: {stop_loss_count}回")
     print("--- 比較: Buy & Hold ---")
     print(f"   最終資産: ${buy_hold_value:,.2f}")
     print(f"   総リターン: {buy_hold_return:.2f}%")
@@ -141,13 +157,10 @@ def main():
     try:
         model, scaler = load_checkpoint()
         
-        run_evaluation(model, scaler)
+        # run_evaluation(model, scaler) # 評価は時間がかかるため、一旦コメントアウト
         
         run_trading_simulation(model, scaler, title="直近30日間", offset_days=0)
-        run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=config.SIM_OFFSET_DAYS)
-
-        print("\n" + "=" * 60)
-        print("✅ 全処理完了!")
+        # run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=360)
     except FileNotFoundError as e:
         print(f"❌ エラー: {e}\n💡 解決方法: modeling/btc_train.py を実行してモデルを学習してください。")
     except Exception as e:

@@ -14,7 +14,6 @@ def get_btc_data(period="2y", interval="1h"):
     """
     yfinanceを使ってビットコインのOHLCVデータを取得
     """
-    print(f"📊 yfinanceからBTCデータ取得中... (期間: {period}, 間隔: {interval})")
     try:
         btc = yf.Ticker("ETH-USD")
         df = btc.history(period=period, interval=interval)
@@ -34,7 +33,6 @@ def create_features(df):
     """
     OHLCVから機械学習用の特徴量を作成
     """
-    print("🔧 特徴量を作成中...")
     data = df.copy()
     data['log_return'] = np.log(data['Close'] / data['Close'].shift(1))
     data['hl_range'] = (data['High'] - data['Low']) / data['Close']
@@ -60,7 +58,6 @@ def create_features(df):
     for col in config.FEATURE_COLUMNS:
         data = data.replace([np.inf, -np.inf], np.nan)
     data = data.dropna()
-    print(f"✅ 特徴量作成完了。データ数: {len(data)}")
     return data
 
 # ===== ラベル生成 (2クラス版) =====
