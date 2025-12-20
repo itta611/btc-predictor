@@ -3,6 +3,7 @@ import time
 import sys
 import os
 import datetime
+import json
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,6 +34,11 @@ def get_balance(api):
     if config.DRY_RUN:
         print("   (DRY RUN) ダミーの資産状況を使用します (ETH残高は0として扱います)。")
         # ドライランでもユーザーの状況に合わせて残高0でシミュレーション
+        # テストのために、もしtrade_state_dry.jsonがあればETHを持っていることにするロジックを入れてもいいが、
+        # ここではシンプルに0を返す（買い注文のテスト用）
+        # ただし、売り注文（損切り）をテストしたい場合はここを手動で書き換えるか、
+        # load_entry_price()の結果を見て分岐する必要があるかもしれない。
+        # 今回はシンプルに実装する。
         return 100000, 0.0
     try:
         balances = api.getbalance()
@@ -98,6 +104,44 @@ def send_market_order(api, side, size):
         print(f"   ❌ {side}注文の送信中にエラーが発生しました: {e}")
         return None
 
+# --- 状態管理用関数 (損切りロジック用) ---
+def get_state_file_path():
+    filename = "trade_state_dry.json" if config.DRY_RUN else "trade_state.json"
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+
+def load_entry_price():
+    """保存された購入価格を読み込む"""
+    path = get_state_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                return data.get('entry_price')
+        except Exception as e:
+            print(f"   ⚠️ 状態ファイルの読み込みに失敗しました: {e}")
+            return None
+    return None
+
+def save_entry_price(price):
+    """購入価格を保存する"""
+    path = get_state_file_path()
+    try:
+        with open(path, 'w') as f:
+            json.dump({'entry_price': price, 'timestamp': datetime.datetime.now().isoformat()}, f)
+        print(f"   💾 取得価格 {price:,.0f} JPY を保存しました。")
+    except Exception as e:
+        print(f"   ⚠️ 状態ファイルの保存に失敗しました: {e}")
+
+def clear_entry_price():
+    """購入価格情報を削除する"""
+    path = get_state_file_path()
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+            print("   🗑️ 取得価格情報をリセットしました。")
+        except Exception as e:
+            print(f"   ⚠️ 状態ファイルの削除に失敗しました: {e}")
+
 def run_trading_logic():
     """実際の取引ロジックを実行する"""
     header = "🤖 ETH自動取引ボット実行中 (DRY RUN)" if config.DRY_RUN else "🤖 ETH自動取引ボット実行中 (本番)"
@@ -154,19 +198,43 @@ def run_trading_logic():
             buy_size = (jpy * (1 - config.FEE_RATE)) / current_price
             
             if buy_size >= MIN_ORDER_ETH:
-                send_market_order(api, "BUY", buy_size)
+                order = send_market_order(api, "BUY", buy_size)
+                if order:
+                    # 注文成功時、現在価格を取得価格として保存
+                    save_entry_price(current_price)
             else:
                 print(f"   -> 購入可能数量 ({buy_size:.8f} ETH) が最小注文数量 ({MIN_ORDER_ETH} ETH) 未満のため、購入を見送ります。")
         else:
             print("\n🧘 [判断] 購入条件を満たさなかったため、待機します。")
     else: # 取引対象のETHを保有している場合
-        if result['class'] == 'not-Up':
-            print("\n📉 [判断] 売却条件を満たしました。")
+        # --- 損切りチェック ---
+        entry_price = load_entry_price()
+        is_stop_loss = False
+        
+        if entry_price:
+            stop_loss_price = entry_price * (1 - config.STOP_LOSS_THRESHOLD)
+            print(f"   ℹ️ 取得価格: {entry_price:,.0f} JPY | 損切りライン: {stop_loss_price:,.0f} JPY")
+            
+            if current_price < stop_loss_price:
+                print(f"   ⚠️ 現在価格が損切りラインを下回っています！")
+                is_stop_loss = True
+        else:
+            print("   ℹ️ 取得価格情報がありません（手動購入またはファイル紛失）。損切り判定はスキップされます。")
+
+        if result['class'] == 'not-Up' or is_stop_loss:
+            if is_stop_loss:
+                print("\n📉 [判断] 損切り条件を満たしました。")
+            else:
+                print("\n📉 [判断] 売却条件を満たしました。")
+            
             # 売却するのは取引対象のETHのみ
             sell_size = eth
             
             if sell_size >= MIN_ORDER_ETH:
-                send_market_order(api, "SELL", sell_size)
+                order = send_market_order(api, "SELL", sell_size)
+                if order:
+                    # 売却成功時、取得価格情報をリセット
+                    clear_entry_price()
             else:
                 print(f"   -> 売却可能数量 ({sell_size:.8f} ETH) が最小注文数量 ({MIN_ORDER_ETH} ETH) 未満のため、売却を見送ります。")
         else:
