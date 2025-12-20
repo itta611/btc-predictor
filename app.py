@@ -17,8 +17,6 @@ MIN_ORDER_ETH = 0.01
 
 def get_api():
     """Bitflyer APIオブジェクトを取得する"""
-    if config.DRY_RUN:
-        return None
     try:
         if not config.BITFLYER_API_KEY or config.BITFLYER_API_KEY == "BITFLYER_API_KEY":
              raise ValueError("APIキーがconfig.pyに設定されていません。")
@@ -31,15 +29,6 @@ def get_api():
 
 def get_balance(api):
     """資産状況を取得する。保有している1.0 ETHを無視するロジックを含む。"""
-    if config.DRY_RUN:
-        print("   (DRY RUN) ダミーの資産状況を使用します (ETH残高は0として扱います)。")
-        # ドライランでもユーザーの状況に合わせて残高0でシミュレーション
-        # テストのために、もしtrade_state_dry.jsonがあればETHを持っていることにするロジックを入れてもいいが、
-        # ここではシンプルに0を返す（買い注文のテスト用）
-        # ただし、売り注文（損切り）をテストしたい場合はここを手動で書き換えるか、
-        # load_entry_price()の結果を見て分岐する必要があるかもしれない。
-        # 今回はシンプルに実装する。
-        return 100000, 0.0
     try:
         balances = api.getbalance()
         if not isinstance(balances, list):
@@ -83,9 +72,6 @@ def send_market_order(api, side, size):
     """成行注文を送信する"""
     size = round(size, 8)
     print(f"   注文内容: {side} {size} ETH")
-    if config.DRY_RUN:
-        print("   -> (DRY RUN) 注文は送信されませんでした。")
-        return {'status': 'dry_run'}
     
     try:
         order = api.sendchildorder(
@@ -106,7 +92,7 @@ def send_market_order(api, side, size):
 
 # --- 状態管理用関数 (損切りロジック用) ---
 def get_state_file_path():
-    filename = "trade_state_dry.json" if config.DRY_RUN else "trade_state.json"
+    filename = "trade_state.json"
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
 def load_entry_price():
@@ -144,7 +130,7 @@ def clear_entry_price():
 
 def run_trading_logic():
     """実際の取引ロジックを実行する"""
-    header = "🤖 ETH自動取引ボット実行中 (DRY RUN)" if config.DRY_RUN else "🤖 ETH自動取引ボット実行中 (本番)"
+    header = "🤖 ETH自動取引ボット実行中 (本番)"
     print("\n" + "="*50)
     print(f"{header} ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
     print("="*50)
