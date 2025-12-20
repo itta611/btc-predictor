@@ -160,7 +160,7 @@ def run_trading_logic():
         else:
             print("\n🧘 [判断] 購入条件を満たさなかったため、待機します。")
     else: # 取引対象のETHを保有している場合
-        if result['class'] == 'Not-Up':
+        if result['class'] == 'not-Up':
             print("\n📉 [判断] 売却条件を満たしました。")
             # 売却するのは取引対象のETHのみ
             sell_size = eth
