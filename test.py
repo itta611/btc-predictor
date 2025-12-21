@@ -10,12 +10,14 @@ from utils.btc_data import get_btc_data, create_features, create_labels
 from predictor import predict_class, load_checkpoint
 import config
 
+
 def run_evaluation(model, scaler):
     """
     テストデータ全体でモデルの予測性能を評価する。
     """
     print("\n📊 モデル予測性能評価...")
-    print(f"   (学習目標: {config.THR*100:.2f}%以上の上昇 | 評価基準: {config.EVAL_RETURN_THRESHOLD*100:.2f}%以上の上昇)")
+    print(
+        f"   (学習目標: {config.THR * 100:.2f}%以上の上昇 | 評価基準: {config.EVAL_RETURN_THRESHOLD * 100:.2f}%以上の上昇)")
 
     df = get_btc_data(period=config.DATA_PERIOD, interval=config.DATA_INTERVAL)
     df_with_features = create_features(df)
@@ -31,10 +33,10 @@ def run_evaluation(model, scaler):
     y_predictions, y_true_for_eval = [], []
 
     for i in range(test_start_index + config.L, len(features) - config.H):
-        features_seq = features[i-config.L:i]
+        features_seq = features[i - config.L:i]
         result = predict_class(model, scaler, features_seq)
         y_predictions.append(1 if result['class'] == 'up' else 0)
-        
+
         actual_return = (prices[i + config.H] - prices[i]) / prices[i]
         y_true_for_eval.append(1 if actual_return > config.EVAL_RETURN_THRESHOLD else 0)
 
@@ -42,15 +44,17 @@ def run_evaluation(model, scaler):
         print("   評価対象データなし。")
         return
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("📈 評価サマリー")
-    print("="*50)
-    report = classification_report(y_true_for_eval, y_predictions, target_names=config.CLASS_NAMES, output_dict=True, zero_division=0)
+    print("=" * 50)
+    report = classification_report(y_true_for_eval, y_predictions, target_names=config.CLASS_NAMES, output_dict=True,
+                                   zero_division=0)
     up_precision = report['Up']['precision']
     print(f"\n🎯 **『上がる』と予測した時の成功率 (適合率): {up_precision:.1%}**")
     print(f"   (「Up」と予測した {report['Up']['support']} 件のうち、実際に価格が上昇した割合)")
     print("\n📊 詳細分類レポート:")
     print(classification_report(y_true_for_eval, y_predictions, target_names=config.CLASS_NAMES, zero_division=0))
+
 
 def run_trading_simulation(model, scaler, title, offset_days=0):
     """
@@ -60,13 +64,13 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     # --- データ準備 ---
     SIM_HOURS = config.SIM_DAYS * 24
     OFFSET_HOURS = offset_days * 24
-    
+
     df = get_btc_data(period=config.DATA_PERIOD, interval="1h")
     df_with_features = create_features(df)
-    
+
     features = df_with_features[config.FEATURE_COLUMNS].values
     prices = df_with_features['Close'].values
-    
+
     sim_end_index = len(features) - OFFSET_HOURS
     sim_start_index = sim_end_index - SIM_HOURS
 
@@ -80,7 +84,7 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     btc_amount = 0.0
     position = 'none'
     exit_time = -1
-    entry_price = 0 # 購入価格を記録
+    entry_price = 0  # 購入価格を記録
     trade_count = 0
     win_count = 0
     stop_loss_count = 0
@@ -91,7 +95,7 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
         current_price = prices[i]
         sell = False
         buy = False
-        
+
         # --- 1. 決済の確認 ---
         if position == 'long':
             # 1a. 損切り決済
@@ -103,27 +107,20 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
             elif i == exit_time:
                 sell = True
 
-        if sell:
-            position = 'none'
-
-
         # --- 2. 新規購入の判断 (ポジションがない場合のみ) ---
-        if position == 'none':
+        else:
             if i >= config.L:
-                features_seq = features[i-config.L:i]
+                features_seq = features[i - config.L:i]
                 result = predict_class(model, scaler, features_seq)
 
                 if result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD:
                     buy = True
 
-        if buy and sell:
-            # 同時に売り買い＝何もしない（longのまま）
-            position = 'long'
-            # リセットする情報
-            exit_time = i + config.HOLD_PERIOD
-            entry_price = current_price
-        else:
-            if sell:
+        if sell:
+            features_seq = features[i - config.L:i]
+            result = predict_class(model, scaler, features_seq)
+            if not (result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD):
+                position = 'none'
                 # 決済処理
                 balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
 
@@ -134,13 +131,16 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
                 btc_amount = 0.0
                 trade_count += 1
                 # print("売却しました")
-            if buy:
-                btc_amount = (balance / current_price) * (1 - config.FEE_RATE) # 換金
-                balance = 0.0
-                position = 'long'
+            else:
                 exit_time = i + config.HOLD_PERIOD
-                entry_price = current_price  # 購入価格を記録
-                # print("買いました")
+                entry_price = current_price
+        if buy:
+            btc_amount = (balance / current_price) * (1 - config.FEE_RATE)  # 換金
+            balance = 0.0
+            position = 'long'
+            exit_time = i + config.HOLD_PERIOD
+            entry_price = current_price  # 購入価格を記録
+            # print("買いました")
 
         # ポートフォリオ評価 (毎時間)
         portfolio_value = balance + (btc_amount * current_price)
@@ -150,8 +150,8 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     final_portfolio_value = portfolio_history[-1]
     total_return = (final_portfolio_value / initial_balance - 1) * 100
     win_rate = (win_count / trade_count) * 100 if trade_count > 0 else 0
-    
-    buy_hold_value = (initial_balance / prices[sim_start_index]) * prices[sim_end_index-1]
+
+    buy_hold_value = (initial_balance / prices[sim_start_index]) * prices[sim_end_index - 1]
     buy_hold_return = (buy_hold_value / initial_balance - 1) * 100
 
     print(f"\n--- {title} 結果 ---")
@@ -170,15 +170,16 @@ def main():
     print("=" * 60)
     try:
         model, scaler = load_checkpoint()
-        
+
         # run_evaluation(model, scaler) # 評価は時間がかかるため、一旦コメントアウト
-        
+
         run_trading_simulation(model, scaler, title="直近30日間", offset_days=0)
         # run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=360)
     except FileNotFoundError as e:
         print(f"❌ エラー: {e}\n💡 解決方法: modeling/btc_train.py を実行してモデルを学習してください。")
     except Exception as e:
         print(f"エラーが発生しました: {e}")
+
 
 if __name__ == "__main__":
     main()
