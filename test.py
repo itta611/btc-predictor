@@ -96,30 +96,32 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
         sell = False
         buy = False
 
-        # --- 1. 決済の確認 ---
         if position == 'long':
             # 1a. 損切り決済
+            # print(i, exit_time)
             if current_price < entry_price * (1 - config.STOP_LOSS_THRESHOLD):
                 sell = True
                 stop_loss_count += 1
 
-            # 1b. 時間経過による強制決済
-            elif i == exit_time:
+            # 1b. 時間経過による決済
+            if i == exit_time:
                 sell = True
 
-        # --- 2. 新規購入の判断 (ポジションがない場合のみ) ---
-        else:
-            if i >= config.L:
-                features_seq = features[i - config.L:i]
-                result = predict_class(model, scaler, features_seq)
+            if not sell: continue
 
-                if result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD:
-                    buy = True
+        should_buy = False
 
-        if sell:
+        if i >= config.L:
             features_seq = features[i - config.L:i]
             result = predict_class(model, scaler, features_seq)
-            if not (result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD):
+            should_buy = result['class'] == 'up' and result['confidence'] >= config.CONFIDENCE_THRESHOLD
+
+        if position == 'none':
+            if should_buy:
+                buy = True
+
+        if sell:
+            if not should_buy:
                 position = 'none'
                 # 決済処理
                 balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
@@ -130,17 +132,18 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
 
                 btc_amount = 0.0
                 trade_count += 1
-                # print("売却しました")
             else:
                 exit_time = i + config.HOLD_PERIOD
                 entry_price = current_price
+                print(2)
         if buy:
             btc_amount = (balance / current_price) * (1 - config.FEE_RATE)  # 換金
             balance = 0.0
             position = 'long'
             exit_time = i + config.HOLD_PERIOD
-            entry_price = current_price  # 購入価格を記録
-            # print("買いました")
+            entry_price = current_price
+            print(3)
+            # print((balance + (btc_amount * current_price) / initial_balance - 1) * 100)
 
         # ポートフォリオ評価 (毎時間)
         portfolio_value = balance + (btc_amount * current_price)
