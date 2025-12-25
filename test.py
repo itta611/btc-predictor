@@ -127,23 +127,21 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
                 balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
 
                 # 勝敗判定 (手数料は考慮せず、価格の上下のみで判断)
-                if current_price > entry_price:
+                if current_price * 0.996 > entry_price:
                     win_count += 1
 
                 btc_amount = 0.0
                 trade_count += 1
+                print(balance)
             else:
                 exit_time = i + config.HOLD_PERIOD
                 entry_price = current_price
-                print(2)
         if buy:
             btc_amount = (balance / current_price) * (1 - config.FEE_RATE)  # 換金
             balance = 0.0
             position = 'long'
             exit_time = i + config.HOLD_PERIOD
             entry_price = current_price
-            print(3)
-            # print((balance + (btc_amount * current_price) / initial_balance - 1) * 100)
 
         # ポートフォリオ評価 (毎時間)
         portfolio_value = balance + (btc_amount * current_price)
