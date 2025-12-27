@@ -203,7 +203,7 @@ def main():
 
         # run_evaluation(model, scaler) # 評価は時間がかかるため、一旦コメントアウト
 
-        run_trading_simulation(model, scaler, title="直近30日間", offset_days=100)
+        run_trading_simulation(model, scaler, title="直近30日間", offset_days=0)
         # run_trading_simulation(model, scaler, title="2ヶ月前の30日間", offset_days=360)
     except FileNotFoundError as e:
         print(f"❌ エラー: {e}\n💡 解決方法: modeling/btc_train.py を実行してモデルを学習してください。")
