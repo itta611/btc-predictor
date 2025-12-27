@@ -66,9 +66,11 @@ EVAL_RETURN_THRESHOLD = 0    # 評価時に「成功」と見なす最低利益�
 SIM_DAYS = 200               # 取引シミュレーションを実行する日数
 HOLD_PERIOD = 14             # 仮想取引でポジションを保持する時間（時間）
 FEE_RATE = 0.002             # 取引手数料の割合
-CONFIDENCE_THRESHOLD = 0.76  # 「買い」判断を行うための予測信頼度の閾値 (75%)
-STOP_LOSS_THRESHOLD = 0.025  # 損切りを行う価格下落率の閾値 (2%)
-WIN_THRESHOLD = 0.1          # 損切りを行う価格下落率の閾値 (4%)
+CONFIDENCE_THRESHOLD = 0.77  # 「買い」判断を行うための予測信頼度の閾値 (76%)
+STOP_LOSS_THRESHOLD = 0.02   # 損切りを行う価格下落率の閾値 (2%)
+TAKE_PROFIT_THRESHOLD = 0.04  # 利確を行う価格上昇率の閾値 (4%)
+MAX_DRAWDOWN_THRESHOLD = 0.08 # 最大ドローダウン閾値 (8%)
+MIN_PORTFOLIO_RATIO = 0.92    # 最低資産比率 (92%)
 
 # --- パス設定 (プロジェクトルートからの絶対パスに) ---
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints" / "btc_classifier"

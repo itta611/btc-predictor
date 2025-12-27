@@ -89,6 +89,9 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
     win_count = 0
     stop_loss_count = 0
     portfolio_history = []
+    peak_portfolio = initial_balance  # 最高資産の記録
+    consecutive_losses = 0  # 連続損失回数
+    trade_pause_until = -1  # 取引停止期間
 
     # --- シミュレーションループ ---
     for i in range(sim_start_index, sim_end_index):
@@ -97,13 +100,16 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
         buy = False
 
         if position == 'long':
-            # 1a. 損切り決済
-            # print(i, exit_time)
+            # 1a. 利確決済
+            if current_price > entry_price * (1 + config.TAKE_PROFIT_THRESHOLD):
+                sell = True
+
+            # # 1b. 損切り決済
             if current_price < entry_price * (1 - config.STOP_LOSS_THRESHOLD):
                 sell = True
                 stop_loss_count += 1
 
-            # 1b. 時間経過による決済
+            # 1c. 時間経過による決済
             if i == exit_time:
                 sell = True
 
@@ -124,11 +130,16 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
             if not should_buy:
                 position = 'none'
                 # 決済処理
-                balance = (btc_amount * current_price) * (1 - config.FEE_RATE)
+                balance += (btc_amount * current_price) * (1 - config.FEE_RATE)
 
-                # 勝敗判定 (手数料は考慮せず、価格の上下のみで判断)
+                # 勝敗判定と連続損失管理
                 if current_price * 0.996 > entry_price:
                     win_count += 1
+                    consecutive_losses = 0  # 勝利時は連続損失をリセット
+                else:
+                    consecutive_losses += 1
+                    if consecutive_losses >= 3:
+                        trade_pause_until = i + 12  # 3連続損失後は12時間取引停止
 
                 btc_amount = 0.0
                 trade_count += 1
@@ -136,9 +147,27 @@ def run_trading_simulation(model, scaler, title, offset_days=0):
             else:
                 exit_time = i + config.HOLD_PERIOD
                 entry_price = current_price
-        if buy:
-            btc_amount = (balance / current_price) * (1 - config.FEE_RATE)  # 換金
-            balance = 0.0
+        # ドローダウンリスク管理
+        current_portfolio = balance + (btc_amount * current_price)
+        if current_portfolio > peak_portfolio:
+            peak_portfolio = current_portfolio
+        drawdown = (peak_portfolio - current_portfolio) / peak_portfolio
+
+        # 最低資産比率チェック
+        portfolio_ratio = current_portfolio / initial_balance
+
+        if buy and i > trade_pause_until:
+            # リスク管理: ドローダウンが大きい時や連続損失時はポジションサイズを減らす
+            if drawdown > config.MAX_DRAWDOWN_THRESHOLD or consecutive_losses >= 3:
+                position_multiplier = 0.7
+            elif portfolio_ratio < config.MIN_PORTFOLIO_RATIO:
+                position_multiplier = 0.6
+            else:
+                position_multiplier = 0.8
+
+            position_size = balance * position_multiplier
+            btc_amount = (position_size / current_price) * (1 - config.FEE_RATE)
+            balance = balance - position_size
             position = 'long'
             exit_time = i + config.HOLD_PERIOD
             entry_price = current_price
